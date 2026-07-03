@@ -1,0 +1,51 @@
+# ── Secrets ───────────────────────────────────────────────────
+.env
+*.env.local
+*.env.production
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+ai-engine/.venv/
+ai-engine/venv/
+ai-engine/.pytest_cache/
+ai-engine/.coverage
+ai-engine/coverage.xml
+ai-engine/htmlcov/
+*.egg-info/
+dist/
+build/
+
+# ── Java / Maven ──────────────────────────────────────────────
+backend/target/
+backend/.mvn/
+*.class
+*.jar
+*.war
+*.ear
+
+# ── Node / Frontend ───────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# ── IDE ───────────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Docker ────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Misc ──────────────────────────────────────────────────────
+*.log
+logs/
+tmp/

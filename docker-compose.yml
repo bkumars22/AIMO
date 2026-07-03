@@ -1,0 +1,129 @@
+version: "3.9"
+
+services:
+
+  # ── PostgreSQL + pgvector ─────────────────────────────────────
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: aimo-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-aimo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-aimo_secret}
+      POSTGRES_DB: ${DB_NAME:-aimo}
+    ports:
+      - "5432:5432"
+    volumes:
+      - aimo_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-aimo} -d ${DB_NAME:-aimo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Redis ─────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: aimo-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - aimo_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Spring Boot Backend ───────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aimo-backend
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME:-aimo}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-aimo}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-aimo_secret}
+      SPRING_DATA_REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      AIMO_ALERT_WEBHOOK: ${AIMO_ALERT_WEBHOOK:-}
+      AIMO_AI_ENGINE_URL: http://ai-engine:8001
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # ── FastAPI AI Engine ─────────────────────────────────────────
+  ai-engine:
+    build:
+      context: ./ai-engine
+      dockerfile: Dockerfile
+    container_name: aimo-ai-engine
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-aimo}:${DB_PASSWORD:-aimo_secret}@db:5432/${DB_NAME:-aimo}
+      REDIS_URL: redis://redis:6379
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY:-}
+      LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-AIMO-Production}
+      LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
+      JWT_SECRET: ${JWT_SECRET}
+      AIMO_ENV: ${AIMO_ENV:-production}
+      # Thresholds
+      HALLUCINATION_FAITHFULNESS_THRESHOLD: ${HALLUCINATION_FAITHFULNESS_THRESHOLD:-0.70}
+      HALLUCINATION_SAMPLE_RATE: ${HALLUCINATION_SAMPLE_RATE:-0.20}
+      COST_SPIKE_MULTIPLIER: ${COST_SPIKE_MULTIPLIER:-3.0}
+      COST_SPIKE_ABSOLUTE_CEILING_USD: ${COST_SPIKE_ABSOLUTE_CEILING_USD:-0.50}
+      COMPLIANCE_MIN_RATE: ${COMPLIANCE_MIN_RATE:-0.90}
+      LATENCY_SPIKE_MULTIPLIER: ${LATENCY_SPIKE_MULTIPLIER:-2.0}
+      INJECTION_SIMILARITY_THRESHOLD: ${INJECTION_SIMILARITY_THRESHOLD:-0.85}
+      # Scheduler
+      COMPLIANCE_EVAL_INTERVAL_MIN: ${COMPLIANCE_EVAL_INTERVAL_MIN:-60}
+      LANGSMITH_POLL_INTERVAL_SEC: ${LANGSMITH_POLL_INTERVAL_SEC:-300}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # ── React Frontend ────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+        VITE_AI_ENGINE_URL: ${VITE_AI_ENGINE_URL:-http://localhost:8001}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8001/ws/incidents}
+    container_name: aimo-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      ai-engine:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  aimo_db_data:
+  aimo_redis_data:

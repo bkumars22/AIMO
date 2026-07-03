@@ -1,0 +1,50 @@
+# Railway multi-service deployment configuration
+# Each [[services]] block maps to a Railway service.
+# https://docs.railway.app/reference/config-as-code
+
+[build]
+builder = "dockerfile"
+
+# ── AI Engine (FastAPI) ────────────────────────────────────────────────────
+[[services]]
+name = "ai-engine"
+source = "ai-engine"
+dockerfile = "ai-engine/Dockerfile"
+
+[services.deploy]
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[services.variables]
+PORT = "8001"
+AIMO_ENV = "production"
+
+# ── Spring Boot Backend ────────────────────────────────────────────────────
+[[services]]
+name = "backend"
+source = "backend"
+dockerfile = "backend/Dockerfile"
+
+[services.deploy]
+startCommand = ""
+healthcheckPath = "/actuator/health"
+healthcheckTimeout = 60
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[services.variables]
+SPRING_PROFILES_ACTIVE = "production"
+SERVER_PORT = "$PORT"
+
+# ── Frontend (React → nginx) ───────────────────────────────────────────────
+[[services]]
+name = "frontend"
+source = "frontend"
+dockerfile = "frontend/Dockerfile"
+
+[services.deploy]
+healthcheckPath = "/"
+restartPolicyType = "on_failure"
