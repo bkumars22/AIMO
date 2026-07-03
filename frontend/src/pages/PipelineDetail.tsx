@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Cell, RadialBar, RadialBarChart, ResponsiveContainer, Tooltip } from 'recharts'
+import { Cell, RadialBar, RadialBarChart, ResponsiveContainer } from 'recharts'
 import { apiClient } from '../api/api'
 
 interface PipelineData {
@@ -23,7 +23,7 @@ interface RunRow {
 export default function PipelineDetail() {
   const { id } = useParams<{ id: string }>()
   const [pipeline, setPipeline]   = useState<PipelineData | null>(null)
-  const [runs, setRuns]           = useState<RunRow[]>([])
+  const [_runs, setRuns]           = useState<RunRow[]>([])
   const [incidents, setIncidents] = useState<unknown[]>([])
   const [loading, setLoading]     = useState(true)
 

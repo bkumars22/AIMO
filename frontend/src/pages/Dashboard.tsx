@@ -201,8 +201,8 @@ export default function Dashboard() {
   const { incidents: wsIncidents, connected } = useWebSocket()
   const { incidents: restIncidents }          = useIncidents({ status: 'OPEN' })
   const [pipelines, setPipelines]             = useState<Pipeline[]>([])
-  const [costData, setCostData]               = useState<CostPoint[]>([])
-  const [faithData, setFaithData]             = useState<Array<{ date: string; faithfulness: number }>>([])
+  const [costData, _setCostData]               = useState<CostPoint[]>([])
+  const [faithData, _setFaithData]             = useState<Array<{ date: string; faithfulness: number }>>([])
 
   const allIncidents = wsIncidents.length > 0 ? wsIncidents : restIncidents
 

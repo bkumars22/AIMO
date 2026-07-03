@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useIncidents } from '../hooks/useIncidents'
-import type { Incident } from '../api/api'
+import type { Incident, Severity, IncidentType, IncidentStatus } from '../api/api'
 
 const SEV_STYLES: Record<string, string> = {
   P0: 'bg-red-900/60 text-red-400 border border-red-700',
@@ -30,9 +30,9 @@ export default function Incidents() {
   const [status,   setStatus]   = useState('')
 
   const { incidents, loading, error, refetch } = useIncidents({
-    severity: severity || undefined,
-    type:     type || undefined,
-    status:   status || undefined,
+    severity: (severity as Severity) || undefined,
+    type:     (type as IncidentType) || undefined,
+    status:   (status as IncidentStatus) || undefined,
   })
 
   return (
