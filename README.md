@@ -8,15 +8,11 @@
 [![React 18](https://img.shields.io/badge/React-18-61DAFB.svg)](https://react.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Live Demo:** [aimo-frontend.up.railway.app](https://aimo-frontend.up.railway.app) *(deploy in progress — see Quick Start to run locally)*
-
-| Service | URL |
+| | |
 |---|---|
-| Dashboard (React) | https://aimo-frontend.up.railway.app |
-| AI Engine (FastAPI + Swagger) | https://aimo-ai-engine.up.railway.app/docs |
-| Backend API (Spring Boot) | https://aimo-backend.up.railway.app/actuator/health |
-
-**Guest credentials:** `demo@aimo.internal` / `aimo-demo-2026`
+| **Live Dashboard** | [bkumars22.github.io/AIMO](https://bkumars22.github.io/AIMO) |
+| **API Docs** (Swagger UI — no login needed) | [bkumars22.github.io/AIMO/api-docs](https://bkumars22.github.io/AIMO/api-docs.html) |
+| **Source** | [github.com/bkumars22/AIMO](https://github.com/bkumars22/AIMO) |
 
 ---
 
@@ -32,8 +28,6 @@ AIMO monitors the other 4 projects in this portfolio — making it the observabi
 | ZENTRAVIX | CEO dashboard data pipeline | Health score surfaced in ZENTRAVIX KPIs |
 
 AIMO also monitors **itself** — meta-observability, eating its own dog food.
-
----
 
 ---
 

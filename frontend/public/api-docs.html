@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIMO — AI Engine API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  <style>
+    body { margin: 0; background: #0a0a0a; }
+    .swagger-ui .topbar { background: #111827; }
+    .swagger-ui .topbar .download-url-wrapper { display: none; }
+    #aimo-header {
+      background: #111827;
+      border-bottom: 1px solid #1f2937;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    #aimo-header a { color: #6366f1; text-decoration: none; font-size: 13px; }
+    #aimo-header h1 { color: #f9fafb; font-size: 16px; margin: 0; font-family: monospace; }
+    #aimo-header p { color: #6b7280; font-size: 12px; margin: 0; }
+  </style>
+</head>
+<body>
+  <div id="aimo-header">
+    <div>
+      <h1>AIMO — AI Engine API</h1>
+      <p>FastAPI · 8 endpoints · JWT auth · LangGraph monitoring pipeline</p>
+    </div>
+    <a href="/AIMO/" style="margin-left:auto">← Dashboard</a>
+    <a href="https://github.com/bkumars22/AIMO">GitHub ↗</a>
+  </div>
+
+  <div id="swagger-ui"></div>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    // Inline OpenAPI spec — no running server required
+    const spec = {
+      openapi: "3.0.3",
+      info: {
+        title: "AIMO AI Engine",
+        description: "AI Incident Management & Observability — real-time LLM pipeline monitoring.\n\n**PagerDuty catches when your server is down. AIMO catches when your AI is wrong.**\n\n[GitHub](https://github.com/bkumars22/AIMO) | [Dashboard](https://bkumars22.github.io/AIMO)",
+        version: "1.0.0",
+        contact: { name: "Kumaraswamy B", url: "https://github.com/bkumars22" }
+      },
+      servers: [{ url: "https://aimo-ai-engine.onrender.com", description: "Production (Render)" },
+                { url: "http://localhost:8001", description: "Local" }],
+      components: {
+        securitySchemes: {
+          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" }
+        },
+        schemas: {
+          Severity:      { type: "string", enum: ["P0","P1","P2","P3"] },
+          IncidentType:  { type: "string", enum: ["HALLUCINATION","COST_SPIKE","COMPLIANCE_DRIFT","LATENCY_DEGRADATION","PROMPT_INJECTION","ANOMALY"] },
+          IncidentStatus:{ type: "string", enum: ["OPEN","ACKNOWLEDGED","RESOLVED"] },
+          NodePayload: {
+            type: "object",
+            properties: {
+              name:              { type: "string", example: "generate_response" },
+              model_id:          { type: "string", example: "claude-haiku-4-5-20251001" },
+              cost_usd:          { type: "number", example: 0.0012 },
+              latency_ms:        { type: "integer", example: 1240 },
+              prompt_tokens:     { type: "integer", example: 350 },
+              completion_tokens: { type: "integer", example: 180 },
+              input_text:        { type: "string" },
+              output_text:       { type: "string" }
+            }
+          },
+          RunIngestPayload: {
+            type: "object",
+            required: ["pipeline_id"],
+            properties: {
+              pipeline_id:        { type: "string", example: "550e8400-e29b-41d4-a716-446655440000" },
+              run_id:             { type: "string" },
+              nodes:              { type: "array", items: { "$ref": "#/components/schemas/NodePayload" } },
+              input_text:         { type: "string" },
+              output_text:        { type: "string" },
+              faithfulness_score: { type: "number", example: 0.87 }
+            }
+          },
+          Incident: {
+            type: "object",
+            properties: {
+              id:            { type: "string", format: "uuid" },
+              pipeline_id:   { type: "string", format: "uuid" },
+              incident_type: { "$ref": "#/components/schemas/IncidentType" },
+              severity:      { "$ref": "#/components/schemas/Severity" },
+              status:        { "$ref": "#/components/schemas/IncidentStatus" },
+              title:         { type: "string" },
+              root_cause:    { type: "string", description: "AI-generated root cause (Claude Haiku)" },
+              suggested_fix: { type: "string" },
+              evidence:      { type: "object" },
+              created_at:    { type: "string", format: "date-time" }
+            }
+          }
+        }
+      },
+      security: [{ bearerAuth: [] }],
+      paths: {
+        "/health": {
+          get: {
+            tags: ["ops"],
+            summary: "Health check",
+            security: [],
+            responses: {
+              "200": { description: "Service healthy", content: { "application/json": { example: { status: "ok", service: "aimo-ai-engine", version: "1.0.0", env: "production" } } } }
+            }
+          }
+        },
+        "/pipelines/register": {
+          post: {
+            tags: ["pipelines"],
+            summary: "Register a pipeline to monitor",
+            description: "Returns a pipeline_id and api_key. Use the api_key in @aimo_trace decorator.",
+            requestBody: {
+              required: true,
+              content: { "application/json": { schema: { type: "object", required: ["name"], properties: { name: { type: "string", example: "my-rag-pipeline" }, description: { type: "string" } } } } }
+            },
+            responses: {
+              "200": { description: "Pipeline registered", content: { "application/json": { example: { pipeline_id: "550e8400-e29b-41d4-a716-446655440000", api_key: "aK3mN9...", name: "my-rag-pipeline" } } } }
+            }
+          }
+        },
+        "/runs/ingest": {
+          post: {
+            tags: ["ingestion"],
+            summary: "Ingest a pipeline run for monitoring",
+            description: "Returns 202 immediately. Monitoring pipeline runs asynchronously via LangGraph 6-node graph. Incidents available in /incidents within seconds.",
+            requestBody: {
+              required: true,
+              content: { "application/json": { schema: { "$ref": "#/components/schemas/RunIngestPayload" } } }
+            },
+            responses: {
+              "202": { description: "Accepted for async monitoring", content: { "application/json": { example: { accepted: true, run_id: "run-abc123", message: "Run accepted for monitoring. Results available in /incidents within seconds." } } } }
+            }
+          }
+        },
+        "/pipelines/{pipeline_id}/health": {
+          get: {
+            tags: ["pipelines"],
+            summary: "Current pipeline health",
+            description: "Health score 0–100, trend, active incident counts by severity, last 24h stats.",
+            parameters: [{ name: "pipeline_id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+            responses: {
+              "200": { description: "Health summary", content: { "application/json": { example: { pipeline_id: "550e...", health_score: 82, trend: "stable", active_incidents: { P0: 0, P1: 1, P2: 2, P3: 0 } } } } },
+              "404": { description: "Pipeline not found" }
+            }
+          }
+        },
+        "/incidents": {
+          get: {
+            tags: ["incidents"],
+            summary: "List incidents with filters",
+            parameters: [
+              { name: "pipeline_id", in: "query", schema: { type: "string" } },
+              { name: "severity",    in: "query", schema: { "$ref": "#/components/schemas/Severity" } },
+              { name: "status",      in: "query", schema: { "$ref": "#/components/schemas/IncidentStatus" } },
+              { name: "type",        in: "query", schema: { "$ref": "#/components/schemas/IncidentType" } },
+              { name: "page",        in: "query", schema: { type: "integer", default: 1 } },
+              { name: "limit",       in: "query", schema: { type: "integer", default: 20, maximum: 100 } }
+            ],
+            responses: {
+              "200": { description: "Paginated incident list", content: { "application/json": { schema: { type: "object", properties: { items: { type: "array", items: { "$ref": "#/components/schemas/Incident" } }, total: { type: "integer" }, page: { type: "integer" } } } } } }
+            }
+          }
+        },
+        "/incidents/{incident_id}": {
+          get: {
+            tags: ["incidents"],
+            summary: "Full incident detail",
+            description: "Root cause (Claude AI), evidence, suggested fix, similar past incidents.",
+            parameters: [{ name: "incident_id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+            responses: {
+              "200": { description: "Incident detail", content: { "application/json": { schema: { "$ref": "#/components/schemas/Incident" } } } },
+              "404": { description: "Not found" }
+            }
+          }
+        },
+        "/incidents/{incident_id}/resolve": {
+          patch: {
+            tags: ["incidents"],
+            summary: "Resolve an incident",
+            description: "Updates baseline if marked as false positive.",
+            parameters: [{ name: "incident_id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+            requestBody: {
+              content: { "application/json": { schema: { type: "object", required: ["resolution_notes"], properties: { resolution_notes: { type: "string" }, false_positive: { type: "boolean", default: false } } } } }
+            },
+            responses: {
+              "200": { description: "Resolved" },
+              "404": { description: "Not found" }
+            }
+          }
+        },
+        "/pipelines/{pipeline_id}/metrics": {
+          get: {
+            tags: ["pipelines"],
+            summary: "Historical metrics",
+            description: "Cost, latency, faithfulness over time with granularity.",
+            parameters: [
+              { name: "pipeline_id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+              { name: "from", in: "query", schema: { type: "string", format: "date-time" } },
+              { name: "to",   in: "query", schema: { type: "string", format: "date-time" } },
+              { name: "by",   in: "query", schema: { type: "string", enum: ["hour","day","week"], default: "day" } }
+            ],
+            responses: { "200": { description: "Metrics timeseries" } }
+          }
+        },
+        "/pipelines/{pipeline_id}/baseline/recalculate": {
+          post: {
+            tags: ["pipelines"],
+            summary: "Recalculate anomaly detection baseline",
+            description: "Run after major pipeline changes to reset IsolationForest baselines.",
+            parameters: [
+              { name: "pipeline_id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+              { name: "n_runs", in: "query", schema: { type: "integer", default: 50, minimum: 10, maximum: 500 } }
+            ],
+            responses: { "200": { description: "Baseline recalculated" } }
+          }
+        },
+        "/ws/dashboard": {
+          get: {
+            tags: ["websocket"],
+            summary: "WebSocket — real-time incident stream",
+            description: "Connect via `ws://host/ws/dashboard`. Pushes incident JSON on every detection. Use useWebSocket() hook in the React dashboard.",
+            responses: { "101": { description: "WebSocket upgrade" } }
+          }
+        }
+      }
+    };
+
+    SwaggerUIBundle({
+      spec,
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: "BaseLayout",
+      tryItOutEnabled: false,
+      defaultModelsExpandDepth: 1,
+      defaultModelExpandDepth: 2,
+    });
+  </script>
+</body>
+</html>
