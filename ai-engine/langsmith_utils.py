@@ -23,9 +23,14 @@ except ImportError:
     _TRACING_ENABLED = False
 
 
-def trace_node(node_name: str) -> Callable:
-    """Wrap a LangGraph node with a LangSmith span. No-op when key not set."""
-    def decorator(fn: Callable) -> Callable:
+def trace_node(node_name_or_fn: Callable | str | None = None) -> Callable:
+    """
+    Wrap a LangGraph node with a LangSmith span. No-op when key not set.
+
+    Usable both bare (@trace_node — name inferred from the function) and as
+    a factory (@trace_node("custom_name")).
+    """
+    def wrap(fn: Callable, name: str) -> Callable:
         if not _TRACING_ENABLED:
             return fn
 
@@ -40,8 +45,15 @@ def trace_node(node_name: str) -> Callable:
                 raise
             finally:
                 elapsed_ms = int((time.time() - started) * 1000)
-                logger.debug("[%s] status=%s elapsed=%dms", node_name, status, elapsed_ms)
+                logger.debug("[%s] status=%s elapsed=%dms", name, status, elapsed_ms)
         return wrapper
+
+    if callable(node_name_or_fn):
+        fn = node_name_or_fn
+        return wrap(fn, fn.__name__)
+
+    def decorator(fn: Callable) -> Callable:
+        return wrap(fn, node_name_or_fn or fn.__name__)
     return decorator
 
 
