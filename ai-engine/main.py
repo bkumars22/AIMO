@@ -59,7 +59,7 @@ except ImportError:
     _limiter = None
     RATE_LIMIT_AVAILABLE = False
 
-# ── Storage stubs ─────────────────────────────────────────────────────────────
+# ── Storage layer ──────────────────────────────────────────────────────────────
 from storage.repositories import (
     create_pipeline,
     get_pipeline,
@@ -70,6 +70,7 @@ from storage.repositories import (
     recalculate_baseline_in_db,
     get_pipeline_health_score,
     get_recent_runs,
+    save_span,
 )
 
 # ── Monitoring agent ──────────────────────────────────────────────────────────
@@ -104,6 +105,23 @@ class RunIngestPayload(BaseModel):
     output_text: str = ""
     faithfulness_score: Optional[float] = None
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class SpanIngestPayload(BaseModel):
+    """Matches sdk/aimo_trace.py's per-node POST body exactly."""
+    pipeline_id: str
+    pipeline_name: Optional[str] = None
+    run_id: str
+    node_name: str
+    model_id: Optional[str] = None
+    input_text: str = ""
+    output_text: str = ""
+    context: Optional[str] = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_usd: float = 0.0
+    latency_ms: int = 0
+    user_id: Optional[str] = None
 
 
 class PipelineRegisterPayload(BaseModel):
@@ -248,6 +266,20 @@ async def ingest_run(
         "run_id": payload.run_id or "assigned-by-agent",
         "message": "Run accepted for monitoring. Results available in /incidents within seconds.",
     }
+
+
+# POST /ingest/span
+@app.post("/ingest/span", status_code=status.HTTP_202_ACCEPTED, tags=["ingestion"])
+async def ingest_span(payload: SpanIngestPayload, background_tasks: BackgroundTasks) -> dict:
+    """
+    Fire-and-forget endpoint the @aimo_trace SDK decorator posts to after
+    every LangGraph node completes. Unauthenticated by design — the SDK
+    ships telemetry from inside pipelines that have no user session to
+    attach a bearer token to; this is server-to-server span data, not a
+    user-facing action.
+    """
+    background_tasks.add_task(save_span, payload.model_dump())
+    return {"accepted": True}
 
 
 async def _run_monitoring_bg(pipeline_id: str, run_data: dict) -> None:
