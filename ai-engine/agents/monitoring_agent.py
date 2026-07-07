@@ -8,6 +8,7 @@ LangSmith tracing on every node via @trace_node.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
@@ -46,6 +47,9 @@ from storage.repositories import (
     get_daily_averages,
 )
 from storage.vector_store import store_response_embedding
+
+# ── AIPQ root-cause check (prompt change vs model drift) ─────────────────────
+from integrations.aipq_connector import check_aipq_root_cause, format_root_cause_note
 
 # ── Claude AI for root cause ──────────────────────────────────────────────────
 try:
@@ -307,6 +311,44 @@ Baseline: {baseline}
 Be specific. Do not invent node names not present in the evidence."""
 
 
+def _augment_with_aipq(incident: dict) -> dict:
+    """
+    For HALLUCINATION/QUALITY_DEGRADATION incidents whose evidence identifies
+    an AIPQ-tracked prompt, ask AIPQ whether a recent prompt change is the
+    likely cause (vs. underlying model drift) and fold that into root_cause.
+
+    Evidence carrying aipq_project_id/aipq_prompt_name is not produced by
+    anything in AIMO yet (hallucination.py is a Phase-1 stub) — this is the
+    ready-to-fire other half of that loop for once it is. Runs inside a
+    background-thread executor (see main.py), never inside an already-running
+    event loop, so asyncio.run() here is safe.
+    """
+    if incident.get("incident_type") not in ("HALLUCINATION", "QUALITY_DEGRADATION"):
+        return incident
+
+    evidence = incident.get("evidence") or {}
+    project_id = evidence.get("aipq_project_id")
+    prompt_name = evidence.get("aipq_prompt_name")
+    if not project_id or not prompt_name:
+        return incident
+
+    try:
+        aipq_status = asyncio.run(check_aipq_root_cause(project_id, prompt_name))
+    except Exception as exc:
+        logger.warning("AIPQ augmentation failed for incident %s: %s", incident.get("id"), exc)
+        return incident
+
+    if aipq_status is None:
+        return incident
+
+    note = format_root_cause_note(aipq_status)
+    return {
+        **incident,
+        "root_cause": f"{incident.get('root_cause', '')}\n\n{note}".strip(),
+        "aipq_status": aipq_status,
+    }
+
+
 @trace_node
 def generate_root_cause(state: AIMOState) -> AIMOState:
     """
@@ -318,10 +360,11 @@ def generate_root_cause(state: AIMOState) -> AIMOState:
     for inc in state.get("incidents", []):
         try:
             if not LLM_AVAILABLE or not _llm:
-                enriched.append({
+                entry = {
                     **inc,
                     "root_cause": "AI root cause generation disabled (ANTHROPIC_API_KEY not set).",
-                })
+                }
+                enriched.append(_augment_with_aipq(entry))
                 continue
 
             prompt = _ROOT_CAUSE_PROMPT.format(
@@ -338,7 +381,9 @@ def generate_root_cause(state: AIMOState) -> AIMOState:
                 if end > start:
                     suggested_fix = response[start : end + 3]
 
-            enriched.append({**inc, "root_cause": response, "suggested_fix": suggested_fix})
+            entry = {**inc, "root_cause": response, "suggested_fix": suggested_fix}
+            entry = _augment_with_aipq(entry)
+            enriched.append(entry)
         except Exception as exc:
             logger.error("root cause generation failed for %s: %s", inc.get("id"), exc)
             enriched.append({**inc, "root_cause": f"Generation error: {exc}"})
