@@ -49,7 +49,7 @@ from storage.repositories import (
 from storage.vector_store import store_response_embedding
 
 # ── AIPQ root-cause check (prompt change vs model drift) ─────────────────────
-from integrations.aipq_connector import check_aipq_root_cause, format_root_cause_note
+from integrations.aipq_connector import check_aipq_root_cause, format_root_cause_note, get_aipq_mapping
 
 # ── Claude AI for root cause ──────────────────────────────────────────────────
 try:
@@ -236,6 +236,13 @@ def classify_incidents(state: AIMOState) -> AIMOState:
                             "relevance": nr.relevance_score,
                             "geval": nr.geval_score,
                         }
+                        # Only HALLUCINATION / QUALITY_DEGRADATION have an AIPQ-tracked
+                        # prompt behind them worth asking "did the prompt change?" about.
+                        if triggered in ("HALLUCINATION", "QUALITY_DEGRADATION"):
+                            mapping = get_aipq_mapping(state["pipeline_id"], nr.node_name)
+                            if mapping:
+                                evidence["aipq_project_id"] = mapping["project_id"]
+                                evidence["aipq_prompt_name"] = mapping["prompt_name"]
                         incidents.append(_make_incident(state, triggered, "P1", evidence))
             except Exception as eval_exc:
                 logger.warning("deepeval batch evaluation failed: %s", eval_exc)

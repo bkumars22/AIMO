@@ -7,16 +7,16 @@ got worse" into "prompt vN, deployed 2 days ago, dropped compliance from
 0.94 to 0.71 — rollback recommended" (or, if the prompt hasn't changed,
 "this is model drift, not a prompt regression").
 
-Wiring status: hallucination.py (score_faithfulness/score_consistency) is
-still a Phase 1 stub (raises NotImplementedError), so nothing in AIMO
-today actually produces a HALLUCINATION incident carrying a prompt_name.
-This connector is the ready-to-call other half of that loop — call
-check_aipq_root_cause() directly once an incident's evidence identifies
-which AIPQ-tracked prompt was involved; monitoring_agent.generate_root_cause
-already calls it opportunistically when that evidence is present.
+Now wired automatically: classify_incidents (monitoring_agent.py) looks up
+each (pipeline_id, node_name) pair in AIPQ_PIPELINE_MAP and, when a match
+exists, stamps aipq_project_id/aipq_prompt_name onto the incident's
+evidence at creation time — so generate_root_cause's existing
+_augment_with_aipq call fires for real instead of only when a caller
+manually supplies that evidence.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Optional
@@ -27,6 +27,21 @@ logger = logging.getLogger(__name__)
 
 AIPQ_BASE_URL = os.getenv("AIPQ_BASE_URL", "http://localhost:8001")
 AIPQ_API_KEY = os.getenv("AIPQ_API_KEY", "")
+
+# JSON env var mapping AIMO pipeline_id -> node_name -> AIPQ (project_id, prompt_name):
+#   AIPQ_PIPELINE_MAP={"aria-prod": {"teach_socratically": {"project_id": 1, "prompt_name": "aria_socratic_system"}}}
+# A pipeline can have multiple nodes, each independently tracked by AIPQ as its
+# own prompt, hence the two-level lookup rather than one mapping per pipeline.
+_PIPELINE_MAP: dict = {}
+try:
+    _PIPELINE_MAP = json.loads(os.getenv("AIPQ_PIPELINE_MAP", "{}"))
+except json.JSONDecodeError:
+    logger.warning("AIPQ_PIPELINE_MAP is not valid JSON — no AIMO incidents will auto-map to AIPQ prompts")
+
+
+def get_aipq_mapping(pipeline_id: str, node_name: str) -> Optional[dict]:
+    """Returns {"project_id": int, "prompt_name": str} if this pipeline/node is AIPQ-tracked, else None."""
+    return _PIPELINE_MAP.get(pipeline_id, {}).get(node_name)
 
 
 async def check_aipq_root_cause(project_id: int, prompt_name: str) -> Optional[dict]:

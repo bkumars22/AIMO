@@ -161,6 +161,54 @@ class TestClassifyIncidents:
             result = classify_incidents(state)
         assert result["incidents"] == []
 
+    def test_hallucination_gets_aipq_ids_when_mapped(self):
+        state = _initial_state(anomalies=[], metrics={"node_metrics": [{"name": "teach_socratically"}]},
+                                run_data=_run_data(), pipeline_id="aria-prod")
+        node_result = MagicMock(
+            node_name="teach_socratically", incidents_triggered=["HALLUCINATION"],
+            faithfulness_score=0.5, relevance_score=0.6, geval_score=0.4,
+        )
+        with patch("agents.monitoring_agent.evaluate_nodes") as mock_eval, \
+             patch("agents.monitoring_agent.get_aipq_mapping",
+                   return_value={"project_id": 1, "prompt_name": "aria_socratic_system"}) as mock_map:
+            mock_eval.return_value = MagicMock(node_results=[node_result])
+            result = classify_incidents(state)
+        mock_map.assert_called_once_with("aria-prod", "teach_socratically")
+        inc = result["incidents"][0]
+        assert inc["evidence"]["aipq_project_id"] == 1
+        assert inc["evidence"]["aipq_prompt_name"] == "aria_socratic_system"
+
+    def test_hallucination_without_mapping_has_no_aipq_ids(self):
+        state = _initial_state(anomalies=[], metrics={"node_metrics": [{"name": "generate"}]},
+                                run_data=_run_data(), pipeline_id="unmapped-pipeline")
+        node_result = MagicMock(
+            node_name="generate", incidents_triggered=["HALLUCINATION"],
+            faithfulness_score=0.5, relevance_score=0.6, geval_score=0.4,
+        )
+        with patch("agents.monitoring_agent.evaluate_nodes") as mock_eval, \
+             patch("agents.monitoring_agent.get_aipq_mapping", return_value=None):
+            mock_eval.return_value = MagicMock(node_results=[node_result])
+            result = classify_incidents(state)
+        inc = result["incidents"][0]
+        assert "aipq_project_id" not in inc["evidence"]
+        assert "aipq_prompt_name" not in inc["evidence"]
+
+    def test_cost_spike_node_result_does_not_get_aipq_ids(self):
+        state = _initial_state(anomalies=[], metrics={"node_metrics": [{"name": "teach_socratically"}]},
+                                run_data=_run_data(), pipeline_id="aria-prod")
+        node_result = MagicMock(
+            node_name="teach_socratically", incidents_triggered=["COST_SPIKE"],
+            faithfulness_score=0.9, relevance_score=0.9, geval_score=0.9,
+        )
+        with patch("agents.monitoring_agent.evaluate_nodes") as mock_eval, \
+             patch("agents.monitoring_agent.get_aipq_mapping") as mock_map:
+            mock_map.return_value = {"project_id": 1, "prompt_name": "aria_socratic_system"}
+            mock_eval.return_value = MagicMock(node_results=[node_result])
+            result = classify_incidents(state)
+        mock_map.assert_not_called()
+        inc = result["incidents"][0]
+        assert "aipq_project_id" not in inc["evidence"]
+
 
 # ── generate_root_cause ───────────────────────────────────────────────────────
 
