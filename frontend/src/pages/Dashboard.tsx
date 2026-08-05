@@ -199,19 +199,28 @@ function FaithfulnessChart({ data }: { data: Array<{ date: string; faithfulness:
 
 export default function Dashboard() {
   const { incidents: wsIncidents, connected } = useWebSocket()
-  const { incidents: restIncidents }          = useIncidents({ status: 'OPEN' })
+  const { incidents: restIncidents, error: incidentsError } = useIncidents({ status: 'OPEN' })
   const [pipelines, setPipelines]             = useState<Pipeline[]>([])
-  const [costData, _setCostData]               = useState<CostPoint[]>([])
-  const [faithData, _setFaithData]             = useState<Array<{ date: string; faithfulness: number }>>([])
+  const [costData, setCostData]               = useState<CostPoint[]>([])
+  const [faithData, setFaithData]             = useState<Array<{ date: string; faithfulness: number }>>([])
+  const [backendError, setBackendError]       = useState<string | null>(null)
 
   const allIncidents = wsIncidents.length > 0 ? wsIncidents : restIncidents
 
   useEffect(() => {
     apiClient.get('/api/pipelines')
-      .then((r) => setPipelines(r.data))
+      .then((r) => { setPipelines(r.data); setBackendError(null) })
+      .catch((err) => setBackendError(err?.message ?? 'Failed to reach backend'))
+
+    apiClient.get('/api/pipelines/metrics', { params: { days: 7 } })
+      .then((r) => {
+        setCostData(r.data.cost_trend ?? [])
+        setFaithData(r.data.faithfulness_trend ?? [])
+      })
       .catch(() => {})
-    // Phase 1: fetch cost + faithfulness trend from /api/pipelines/metrics
   }, [])
+
+  const connectionError = backendError ?? incidentsError
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -231,6 +240,12 @@ export default function Dashboard() {
       </header>
 
       <main className="p-6 max-w-7xl mx-auto">
+        {connectionError && (
+          <div className="bg-red-950/60 border border-red-800 rounded-lg p-3 mb-6 text-xs text-red-300">
+            Can't reach the AIMO backend ({connectionError}) — the zeros below may mean "no data" or
+            "not connected", not necessarily a healthy fleet.
+          </div>
+        )}
         <KpiBar incidents={allIncidents} />
         <PipelineGrid pipelines={pipelines} />
         <IncidentFeedPanel incidents={allIncidents} connected={connected} />

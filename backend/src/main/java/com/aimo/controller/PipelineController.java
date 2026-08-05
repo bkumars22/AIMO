@@ -1,8 +1,10 @@
 package com.aimo.controller;
 
 import com.aimo.entity.Pipeline;
+import com.aimo.entity.PipelineRun;
 import com.aimo.repository.IncidentRepository;
 import com.aimo.repository.PipelineRepository;
+import com.aimo.repository.PipelineRunRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.data.domain.PageRequest;
@@ -12,8 +14,18 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/pipelines")
@@ -21,10 +33,13 @@ public class PipelineController {
 
     private final PipelineRepository pipelineRepo;
     private final IncidentRepository incidentRepo;
+    private final PipelineRunRepository pipelineRunRepo;
 
-    public PipelineController(PipelineRepository pipelineRepo, IncidentRepository incidentRepo) {
+    public PipelineController(PipelineRepository pipelineRepo, IncidentRepository incidentRepo,
+                               PipelineRunRepository pipelineRunRepo) {
         this.pipelineRepo = pipelineRepo;
         this.incidentRepo = incidentRepo;
+        this.pipelineRunRepo = pipelineRunRepo;
     }
 
     record CreateRequest(@NotBlank String name, String description) {}
@@ -32,6 +47,57 @@ public class PipelineController {
     @GetMapping
     public ResponseEntity<?> list(@AuthenticationPrincipal String email) {
         return ResponseEntity.ok(pipelineRepo.findByOwnerEmail(email));
+    }
+
+    // Fleet-wide cost + faithfulness trend across all of the current user's
+    // pipelines, for the dashboard's "Cost Trend (7d)" / "Faithfulness Trend
+    // (7d)" charts. pipeline_runs rows come from the ai-engine's monitoring
+    // pipeline (storage/repositories.py save_run — see monitoring_agent.py's
+    // store_and_update node).
+    @GetMapping("/metrics")
+    public ResponseEntity<?> fleetMetrics(
+            @AuthenticationPrincipal String email,
+            @RequestParam(defaultValue = "7") int days) {
+
+        List<UUID> pipelineIds = pipelineRepo.findByOwnerEmail(email).stream()
+                .map(Pipeline::getId)
+                .collect(Collectors.toList());
+
+        if (pipelineIds.isEmpty()) {
+            return ResponseEntity.ok(Map.of("cost_trend", List.of(), "faithfulness_trend", List.of()));
+        }
+
+        Instant since = Instant.now().minusSeconds((long) days * 24 * 3600);
+        List<PipelineRun> runs = pipelineRunRepo
+                .findByPipelineIdInAndStartedAtAfterOrderByStartedAtAsc(pipelineIds, since);
+
+        DateTimeFormatter dayFmt = DateTimeFormatter.ISO_LOCAL_DATE;
+        Map<String, List<BigDecimal>> costByDay = new LinkedHashMap<>();
+        Map<String, List<BigDecimal>> faithByDay = new LinkedHashMap<>();
+
+        for (PipelineRun run : runs) {
+            String day = LocalDate.ofInstant(run.getStartedAt(), ZoneOffset.UTC).format(dayFmt);
+            if (run.getCostUsd() != null) {
+                costByDay.computeIfAbsent(day, d -> new ArrayList<>()).add(run.getCostUsd());
+            }
+            if (run.getFaithfulnessScore() != null) {
+                faithByDay.computeIfAbsent(day, d -> new ArrayList<>()).add(run.getFaithfulnessScore());
+            }
+        }
+
+        List<Map<String, Object>> costTrend = costByDay.entrySet().stream()
+                .map(e -> Map.<String, Object>of("date", e.getKey(), "cost", average(e.getValue())))
+                .collect(Collectors.toList());
+        List<Map<String, Object>> faithTrend = faithByDay.entrySet().stream()
+                .map(e -> Map.<String, Object>of("date", e.getKey(), "faithfulness", average(e.getValue())))
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(Map.of("cost_trend", costTrend, "faithfulness_trend", faithTrend));
+    }
+
+    private static BigDecimal average(List<BigDecimal> values) {
+        BigDecimal sum = values.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        return sum.divide(BigDecimal.valueOf(values.size()), 6, RoundingMode.HALF_UP);
     }
 
     @PostMapping
