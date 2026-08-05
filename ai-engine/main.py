@@ -40,12 +40,17 @@ logger = logging.getLogger(__name__)
 try:
     from jose import JWTError, jwt as _jwt
     JWT_SECRET  = os.getenv("JWT_SECRET", "change-me-in-production")
-    JWT_ALG     = "HS256"
+    # The Spring Boot backend (security/JwtTokenProvider.java) calls
+    # Jwts.builder().signWith(key) with no explicit algorithm — JJWT picks
+    # HS256 vs HS512 based on key length, and JWT_SECRET here is long enough
+    # (>=64 bytes) that it signs HS512. Accept both so a token issued by the
+    # backend's /api/auth/login is also valid here (same shared secret).
+    JWT_ALGS    = ["HS256", "HS512"]
     JWT_AVAILABLE = True
 except ImportError:
     JWT_AVAILABLE = False
     JWT_SECRET = ""
-    JWT_ALG = "HS256"
+    JWT_ALGS = ["HS256", "HS512"]
     logger.warning("python-jose not installed — JWT auth disabled")
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -190,7 +195,7 @@ def _verify_token(credentials: Optional[HTTPAuthorizationCredentials]) -> dict:
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing auth token")
     try:
-        return _jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALG])
+        return _jwt.decode(credentials.credentials, JWT_SECRET, algorithms=JWT_ALGS)
     except JWTError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {exc}")
 
