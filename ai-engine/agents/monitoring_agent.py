@@ -12,6 +12,7 @@ import asyncio
 import logging
 import os
 import uuid
+from datetime import datetime, timezone
 from typing import Optional, TypedDict
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ from alerting.dispatcher import dispatch
 from alerting.redis_pubsub import publish
 from storage.repositories import (
     save_incident,
+    save_run,
     update_pipeline_health,
     get_recent_runs,
     get_daily_averages,
@@ -444,6 +446,29 @@ def store_and_update(state: AIMOState) -> AIMOState:
     """
     saved_ids: list[str] = []
     incidents = state.get("enriched_incidents") or state.get("incidents", [])
+    metrics   = state.get("metrics", {})
+
+    # Persist this run so future runs have a baseline to compare against
+    # (detect_anomalies reads history via get_recent_runs/get_daily_averages)
+    # and so the dashboard's cost/faithfulness trend charts have data.
+    try:
+        now = datetime.now(timezone.utc)
+        save_run({
+            "pipeline_id":        state["pipeline_id"],
+            "run_id":             state["run_id"],
+            "status":             "completed",
+            "total_cost_usd":     metrics.get("cost_usd", 0.0),
+            "total_tokens":       metrics.get("prompt_tokens", 0) + metrics.get("completion_tokens", 0),
+            "latency_ms":         metrics.get("latency_ms", 0),
+            "node_count":         metrics.get("node_count", 0),
+            "model_ids":          [n.get("model") for n in metrics.get("node_metrics", []) if n.get("model")],
+            "started_at":         now,
+            "completed_at":       now,
+            "faithfulness_score": metrics.get("faithfulness_score"),
+        })
+    except Exception as exc:
+        logger.error("save_run failed: %s", exc)
+        state["errors"].append({"node": "store_and_update", "error": str(exc)})
 
     for inc in incidents:
         try:
