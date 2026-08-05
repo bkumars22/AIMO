@@ -1,9 +1,11 @@
 import axios from 'axios'
 
 // ── Env vars ──────────────────────────────────────────────────────────────────
-export const AI_ENGINE = import.meta.env.VITE_AI_ENGINE_URL ?? 'http://localhost:8001'
-export const BACKEND   = import.meta.env.VITE_API_BASE_URL  ?? 'http://localhost:8080'
-export const WS_URL    = import.meta.env.VITE_WS_URL        ?? 'ws://localhost:8001/ws/dashboard'
+// `||` (not `??`) on purpose — the GitHub Pages build passes these as empty
+// strings, not unset, so a nullish check alone would never fall through.
+export const AI_ENGINE = import.meta.env.VITE_AI_ENGINE_URL || 'http://localhost:8001'
+export const BACKEND   = import.meta.env.VITE_API_BASE_URL  || 'http://localhost:8080'
+export const WS_URL    = import.meta.env.VITE_WS_URL        || 'ws://localhost:8001/ws/dashboard'
 
 // ── Axios client with auth header injection ───────────────────────────────────
 export const apiClient = axios.create({ baseURL: BACKEND })

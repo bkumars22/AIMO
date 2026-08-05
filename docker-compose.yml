@@ -71,7 +71,10 @@ services:
       dockerfile: Dockerfile
     container_name: aimo-ai-engine
     ports:
-      - "8001:8001"
+      # Host-side remapped to 8020 (container stays 8001 internally) — AIPQ's
+      # own backend and this repo's SCIP/BCT suite both default to host 8001,
+      # so all three can't bind it at once when running side by side locally.
+      - "8020:8001"
     environment:
       DATABASE_URL: postgresql://${DB_USER:-aimo}:${DB_PASSWORD:-aimo_secret}@db:5432/${DB_NAME:-aimo}
       REDIS_URL: redis://redis:6379
@@ -112,8 +115,8 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
-        VITE_AI_ENGINE_URL: ${VITE_AI_ENGINE_URL:-http://localhost:8001}
-        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8001/ws/incidents}
+        VITE_AI_ENGINE_URL: ${VITE_AI_ENGINE_URL:-http://localhost:8020}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8020/ws/dashboard}
     container_name: aimo-frontend
     ports:
       - "3000:80"
