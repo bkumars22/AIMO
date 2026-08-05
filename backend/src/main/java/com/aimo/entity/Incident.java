@@ -23,7 +23,7 @@ public class Incident {
     private UUID pipelineId;
 
     @Column(name = "run_id")
-    private String runId;
+    private UUID runId;
 
     @Column(name = "incident_type", nullable = false)
     private String incidentType;
