@@ -23,7 +23,7 @@ AIMO monitors the other 4 projects in this portfolio — making it the observabi
 | Project | AIMO monitors | Repository |
 |---|---|---|
 | [QAIP](https://github.com/bkumars22/QA-Intelligent-Platform) | QA test pipeline cost + faithfulness | QAIP sends run data to `/runs/ingest` |
-| [SCIP](https://github.com/bkumars22/scip) | Supplier analysis LLM calls | `@aimo_trace` on generate nodes |
+| [SCIP](https://github.com/bkumars22/SupplyChainPlatformProject) | Supplier analysis LLM calls | `@aimo_trace` on generate nodes |
 | [ARIA](https://github.com/bkumars22/ARIA) | AI tutor compliance + injection | Injection detector already 100% passing |
 | ZENTRAVIX | CEO dashboard data pipeline | Health score surfaced in ZENTRAVIX KPIs |
 
@@ -59,17 +59,20 @@ AIMO solves all five.
 ┌─────────────────────────────────────────────────────────┐
 │                  AIMO AI Engine (FastAPI)                │
 │                                                          │
-│  LangGraph Monitoring Pipeline (7 nodes)                 │
+│  LangGraph Monitoring Pipeline (6 nodes)                 │
 │  ┌──────────────┐                                        │
-│  │ ingest_telemetry → score_hallucination               │
-│  │               → detect_cost_anomaly                  │
-│  │               → check_compliance                     │
-│  │               → detect_latency_drift                 │
-│  │               → classify_injections                  │
-│  │               → dispatch_incidents                   │
+│  │ collect_metrics → detect_anomalies                   │
+│  │               → classify_incidents                   │
+│  │               → generate_root_cause                  │
+│  │               → send_alerts                          │
+│  │               → store_and_update                     │
 │  └──────────────┘                                        │
 │                                                          │
-│  Detectors: deepeval · IsolationForest · pgvector · regex│
+│  Detection: IsolationForest + threshold + drift          │
+│    (anomaly_detector.py) · deepeval batch node eval       │
+│    (faithfulness/relevance/compliance) · 18-pattern       │
+│    + vector injection classifier · Claude for root cause  │
+│    and edge-case classification · AIPQ root-cause lookup  │
 │  Scheduler: compliance eval (60 min) · LangSmith (5 min) │
 └──────┬───────────────────┬───────────────────────────────┘
        │ JPA/Flyway        │ Redis pub/sub
@@ -111,7 +114,7 @@ AIMO solves all five.
 | Embeddings | sentence-transformers `all-MiniLM-L6-v2` (local, free) |
 | Vector Store | pgvector 0.7 (384-dim) — compliance baselines + injection vectors |
 | Backend | Spring Boot 3.3 · Java 17 · Spring Security · JJWT 0.12.6 |
-| Database | PostgreSQL 15 + pgvector · Flyway migrations (V1–V5) |
+| Database | PostgreSQL 15 + pgvector · Flyway migrations (V1–V8) |
 | Cache / Pub-Sub | Redis 7 |
 | Frontend | React 18 · TypeScript 5.5 · Vite 5 · Tailwind CSS 3 · Recharts 2 |
 | CI | GitHub Actions — blocks merge on test failure |
@@ -132,28 +135,35 @@ AIMO/
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   ├── agents/
-│   │   └── monitoring_agent.py # LangGraph 7-node pipeline + MonitoringState
+│   │   └── monitoring_agent.py # LangGraph 6-node pipeline + AIMOState
 │   ├── detectors/
-│   │   ├── hallucination.py    # deepeval faithfulness + consistency
-│   │   ├── cost_anomaly.py     # IsolationForest on cost_events
-│   │   ├── compliance_drift.py # pgvector embedding comparison
-│   │   ├── latency_degradation.py # z-score on latency rolling window
-│   │   └── injection_detector.py  # 18 regex patterns — FULLY IMPLEMENTED
+│   │   ├── anomaly_detector.py    # IsolationForest + threshold + drift — FULLY IMPLEMENTED, wired in
+│   │   ├── injection_detector.py  # 18 regex patterns + vector similarity — FULLY IMPLEMENTED, wired in
+│   │   ├── hallucination.py       # standalone faithfulness scorer — implemented but NOT called by the
+│   │   │                          #   pipeline (which uses evaluators/deepeval_evaluator.py instead)
+│   │   ├── cost_anomaly.py        # superseded by anomaly_detector.py — dead code, still Phase-1 stub
+│   │   ├── compliance_drift.py    # superseded by anomaly_detector.py — dead code, still Phase-1 stub
+│   │   └── latency_degradation.py # superseded by anomaly_detector.py — dead code, still Phase-1 stub
+│   ├── evaluators/
+│   │   └── deepeval_evaluator.py  # batch node eval: faithfulness/relevance/consistency/
+│   │                               #   behavioral-compliance — FULLY IMPLEMENTED, wired in
+│   ├── integrations/
+│   │   └── aipq_connector.py      # "was this a prompt change or model drift?" — FULLY IMPLEMENTED
 │   ├── ingestion/
 │   │   ├── schema.py           # Pydantic models (SpanPayload, RunPayload, …)
 │   │   └── normalizer.py       # LangSmith trace → SpanPayload
 │   ├── storage/
 │   │   ├── database.py         # SQLAlchemy engine + SessionLocal
-│   │   ├── repositories.py     # 14 DB operation stubs
-│   │   └── vector_store.py     # pgvector embed + search stubs
+│   │   ├── repositories.py     # DB operations — FULLY IMPLEMENTED, wired in
+│   │   └── vector_store.py     # pgvector embed + search — still stubs (NotImplementedError)
 │   ├── alerting/
-│   │   ├── dispatcher.py       # webhook + email dispatch stubs
+│   │   ├── dispatcher.py       # Slack webhook + SMTP email — FULLY IMPLEMENTED, wired in
 │   │   ├── redis_pubsub.py     # Redis pub/sub for WebSocket delivery
-│   │   └── rules.py            # alert rule evaluation stubs
+│   │   └── rules.py            # alert rule evaluation — still stubs (NotImplementedError)
 │   ├── sdk/
 │   │   └── aimo_trace.py       # @aimo_trace decorator — FULLY IMPLEMENTED
 │   ├── bridges/
-│   │   └── langsmith_bridge.py # LangSmith polling bridge stub
+│   │   └── langsmith_bridge.py # LangSmith polling bridge — still a stub (NotImplementedError)
 │   ├── scheduler.py            # APScheduler — compliance + LangSmith jobs
 │   ├── langsmith_utils.py      # @trace_node passthrough decorator
 │   └── tests/
@@ -170,11 +180,14 @@ AIMO/
 │           ├── application.properties
 │           ├── application-test.properties  # H2 in-memory for tests
 │           └── db/migration/
-│               ├── V1__core_schema.sql      # pipelines, runs, spans
-│               ├── V2__incidents.sql        # incidents, evidence, eval runs
-│               ├── V3__cost_injection.sql   # cost_events, injection_attempts
-│               ├── V4__alerting.sql         # alert_rules (13 seeded defaults)
-│               └── V5__pgvector.sql         # vector extension + IVFFlat indexes
+│               ├── V1__core_schema.sql          # pipelines, runs, spans
+│               ├── V2__incidents.sql            # incidents, evidence, eval runs
+│               ├── V3__cost_injection.sql       # cost_events, injection_attempts
+│               ├── V4__alerting.sql             # alert_rules (13 seeded defaults)
+│               ├── V5__pgvector.sql             # vector extension + IVFFlat indexes
+│               ├── V6__users.sql
+│               ├── V7__pipeline_enhancements.sql
+│               └── V8__incident_api_fields.sql
 │
 └── frontend/                   # React dashboard
     ├── package.json            # React 18 · Recharts · Vite · Tailwind
@@ -183,12 +196,12 @@ AIMO/
     ├── vite.config.ts          # path alias + dev proxy
     ├── tailwind.config.js
     └── src/
-        ├── App.tsx             # BrowserRouter — /, /incidents/:id, /pipelines/:id
-        ├── api/api.ts          # TypeScript interfaces + API stubs
+        ├── App.tsx             # BrowserRouter — /, /incidents, /incidents/:id, /pipelines/:id, /settings
+        ├── api/api.ts          # TypeScript interfaces + API client (demo-mode mocking via IS_DEMO)
         ├── hooks/
-        │   ├── useWebSocket.ts # WebSocket hook stub
-        │   └── useIncidents.ts # REST fetch hook stub
-        └── pages + components/ # Dashboard, IncidentDetail, PipelineDetail
+        │   ├── useWebSocket.ts # live incident feed, exponential-backoff reconnect — FULLY IMPLEMENTED
+        │   └── useIncidents.ts # REST fetch w/ filters + refetch — FULLY IMPLEMENTED
+        └── pages + components/ # Dashboard, Incidents, IncidentDetail, PipelineDetail, Settings
                                 # IncidentFeed, PipelineHealthCard, CostTimeline,
                                 # ComplianceGauge, LatencyHeatmap, InjectionLog
 ```
@@ -291,9 +304,9 @@ Required checks: `test-ai-engine`, `test-backend`, `lint-frontend`.
 
 | Phase | Scope |
 |---|---|
-| **Scaffold** (now) | All detectors stubbed · injection detector + SDK complete · CI green |
-| **Phase 1** | Implement all 5 detectors · REST API endpoints · real-time dashboard |
-| **Phase 2** | Alert channels (Slack, PagerDuty, email) · incident workflows · RBAC |
+| **Phase 1** (current) | Core 6-node monitoring pipeline wired end-to-end: IsolationForest + threshold + drift anomaly detection, 18-pattern + vector injection classification, deepeval batch node evaluation (faithfulness/relevance/compliance), Claude-generated root cause + edge-case classification, AIPQ prompt-change-vs-drift lookup, Slack/email alert dispatch, real-time WebSocket dashboard. SDK + injection detector complete, CI green. |
+| **Remaining stubs** | `storage/vector_store.py` (pgvector embed/search), `alerting/rules.py` (rule evaluation), `bridges/langsmith_bridge.py` (polling bridge) — all still raise `NotImplementedError`. The original per-type detector files (`hallucination.py`, `cost_anomaly.py`, `compliance_drift.py`, `latency_degradation.py`) were superseded by the consolidated `anomaly_detector.py` + `deepeval_evaluator.py` approach and are unused dead code. |
+| **Phase 2** | Incident workflows (assign/snooze/resolve) · RBAC · PagerDuty alert channel |
 | **Phase 3** | Multi-tenant SaaS · usage billing · public SDK release |
 
 ---
