@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useIncidents } from '../hooks/useIncidents'
-import { apiClient } from '../api/api'
+import { apiClient, IS_DEMO } from '../api/api'
 import type { Incident } from '../api/api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -12,7 +12,7 @@ interface Pipeline {
   id: string
   name: string
   health_score: number
-  active_incidents: { P0: number; P1: number; P2: number; P3: number }
+  active_incidents?: { P0: number; P1: number; P2: number; P3: number }
 }
 
 interface CostPoint { date: string; cost: number }
@@ -76,7 +76,7 @@ function PipelineGrid({ pipelines }: { pipelines: Pipeline[] }) {
     <div className="grid grid-cols-3 gap-3 mb-6">
       {pipelines.map((p) => {
         const color = HEALTH_COLOR(p.health_score)
-        const openP0P1 = (p.active_incidents.P0 || 0) + (p.active_incidents.P1 || 0)
+        const openP0P1 = (p.active_incidents?.P0 || 0) + (p.active_incidents?.P1 || 0)
         return (
           <Link key={p.id} to={`/pipelines/${p.id}`}
             className="bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-600 transition-colors">
@@ -226,7 +226,14 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gray-950 text-white">
       <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">AIMO</h1>
+          <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
+            AIMO
+            {IS_DEMO && (
+              <span className="text-[10px] font-semibold tracking-wide uppercase px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+                Demo data
+              </span>
+            )}
+          </h1>
           <p className="text-xs text-gray-500 mt-0.5">AI Incident Management &amp; Observability</p>
         </div>
         <div className="flex items-center gap-4">

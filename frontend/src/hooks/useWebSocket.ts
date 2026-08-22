@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { WS_URL } from '../api/api'
+import { IS_DEMO, WS_URL } from '../api/api'
 import type { Incident } from '../api/api'
 
 const RECONNECT_BASE_MS  = 1_000
@@ -7,15 +7,18 @@ const RECONNECT_MAX_MS   = 30_000
 const MAX_INCIDENTS      = 200
 
 export function useWebSocket(): { incidents: Incident[]; connected: boolean } {
+  // No live ai-engine to connect to on GitHub Pages — report "connected"
+  // without ever opening a socket. Incidents still flow in via the REST
+  // fetch in useIncidents/Dashboard.tsx (mocked in api.ts).
   const [incidents, setIncidents] = useState<Incident[]>([])
-  const [connected, setConnected] = useState(false)
+  const [connected, setConnected] = useState(IS_DEMO)
   const wsRef       = useRef<WebSocket | null>(null)
   const retryMs     = useRef(RECONNECT_BASE_MS)
   const retryTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const destroyed   = useRef(false)
 
   const connect = useCallback(() => {
-    if (destroyed.current) return
+    if (destroyed.current || IS_DEMO) return
     const ws = new WebSocket(WS_URL)
     wsRef.current = ws
 

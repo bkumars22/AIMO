@@ -35,6 +35,7 @@ jobs:
         working-directory: frontend
         env:
           GITHUB_PAGES: "true"
+          VITE_DEMO_MODE: "true"
           VITE_API_BASE_URL: ""
           VITE_AI_ENGINE_URL: ""
           VITE_WS_URL: ""
