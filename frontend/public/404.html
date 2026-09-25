@@ -4,15 +4,26 @@
 <meta charset="utf-8">
 <title>AIMO</title>
 <script>
-  // GitHub Pages SPA redirect: push the 404'd path into sessionStorage,
-  // then redirect to index.html which React Router picks up.
-  var segmentCount = 1; // number of path segments in the repo name (/AIMO = 1)
+  // GitHub Pages SPA redirect (github.com/rafgraph/spa-github-pages):
+  // encode the real path into a query string index.html's own script
+  // decodes back via history.replaceState, so React Router picks it up.
+  //
+  // pathSegmentsToKeep must be 0 here: aimo.chaitrishodaya.com is a custom
+  // domain serving the app from the true root, not from a
+  // username.github.io/AIMO/ subpath -- there is no extra "/AIMO" segment
+  // to strip. (It was wrongly set to 1, which swallowed the real route --
+  // e.g. /incidents -- into the base path instead of the query string,
+  // producing a redirect target GitHub Pages 404s on too, looping
+  // forever. It also used a "?p=...&q=..." encoding index.html's decoder
+  // never matches -- index.html checks l.search[1] === '/', which only
+  // the standard "?/..." encoding below satisfies.)
+  var pathSegmentsToKeep = 0;
   var l = window.location;
   l.replace(
     l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-    l.pathname.split('/').slice(0, 1 + segmentCount).join('/') + '/?p=/' +
-    l.pathname.slice(1).split('/').slice(segmentCount).join('/').replace(/&/g, '~and~') +
-    (l.search ? '&q=' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+    l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+    l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+    (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
     l.hash
   );
 </script>
