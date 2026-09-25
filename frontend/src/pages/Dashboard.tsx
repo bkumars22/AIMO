@@ -155,7 +155,7 @@ function CostChart({ data }: { data: CostPoint[] }) {
               contentStyle={{ background: '#111827', border: '1px solid #1f2937', fontSize: 12 }}
               formatter={(v: number) => [`$${v.toFixed(4)}`, 'cost']}
             />
-            <Area type="monotone" dataKey="cost" stroke="#6366f1" fill="url(#costGrad)" strokeWidth={2} />
+            <Area type="monotone" dataKey="cost" stroke="#6366f1" fill="url(#costGrad)" strokeWidth={2} isAnimationActive={false} />
           </AreaChart>
         </ResponsiveContainer>
       )}
@@ -187,7 +187,7 @@ function FaithfulnessChart({ data }: { data: Array<{ date: string; faithfulness:
               contentStyle={{ background: '#111827', border: '1px solid #1f2937', fontSize: 12 }}
               formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, 'faithfulness']}
             />
-            <Area type="monotone" dataKey="faithfulness" stroke="#22c55e" fill="url(#faithGrad)" strokeWidth={2} />
+            <Area type="monotone" dataKey="faithfulness" stroke="#22c55e" fill="url(#faithGrad)" strokeWidth={2} isAnimationActive={false} />
           </AreaChart>
         </ResponsiveContainer>
       )}
